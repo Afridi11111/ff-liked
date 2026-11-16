@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#07111d"><title>FF LIKED</title>
+<meta name="theme-color" content="#07111d"><title>FF LIKED V6 - Secure Auth Check</title>
 <style>
 *{box-sizing:border-box} :root{--bg:#070d17;--panel:#111d30;--cyan:#00d5f5;--muted:#718ca7;--line:#263b58;--purple:#a94dff;--green:#00d69b}
 html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(ellipse at 50% 28%,#082333 0,transparent 58%),linear-gradient(145deg,#070d17,#090d19);color:#e8f2ff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -156,8 +156,19 @@ function showAccount(){
   modal('My Account', `
     <p>You are logged in as <b>${esc(currentUser.email||'')}</b>.</p>
     <p class="muted">Your login will stay active on this browser until you log out.</p>
-    <button class="send-btn" id="accountLogout" type="button">Log Out</button>
-    <div id="accountMessage" class="result"></div>`);
+    <button class="dark-btn" id="checkToken" type="button" style="width:100%;min-height:52px;border-radius:13px;margin:8px 0">Check Secure Login Token</button>
+    <div id="accountMessage" class="result" aria-live="polite"></div>
+    <button class="send-btn" id="accountLogout" type="button">Log Out</button>`);
+  $('#checkToken').onclick=async()=>{
+    const out=$('#accountMessage');
+    out.textContent='Checking Firebase sign-in token…';
+    try{
+      const tokenResult=await currentUser.getIdTokenResult(true);
+      const adminClaim=tokenResult.claims.admin===true;
+      out.textContent='Authentication token: VALID · UID: '+currentUser.uid+' · Admin claim: '+(adminClaim?'PRESENT':'NOT PRESENT')+'. '+(adminClaim?'Owner admin access can now be checked by the secure backend.':'Normal customer sign-in is working. Owner admin access is not enabled on this account yet.');
+      console.info('FF LIKED token check',{uid:currentUser.uid,admin:adminClaim,issuedAt:tokenResult.issuedAtTime,expirationTime:tokenResult.expirationTime});
+    }catch(e){out.textContent='Token check failed: '+(e.message||'Unknown error');}
+  };
   $('#accountLogout').onclick=async()=>{
     try{await doLogout();$('#modal').classList.remove('open');}
     catch(e){$('#accountMessage').textContent=e.message;}
@@ -183,83 +194,4 @@ function renderDashboard(){
   box.hidden=false;
   $('#dashWelcome').textContent=(currentUser.displayName ? 'Welcome, '+currentUser.displayName : 'Welcome back')+' · '+(currentUser.email||'');
   const total=orders.length;
-  const pending=orders.filter(o=>!['COMPLETED','SUCCESS','DELIVERED'].includes(String(o.status||'').toUpperCase())).length;
-  const completed=orders.filter(o=>['COMPLETED','SUCCESS','DELIVERED'].includes(String(o.status||'').toUpperCase())).length;
-  $('#dashTotal').textContent=total;
-  $('#dashPending').textContent=pending;
-  $('#dashCompleted').textContent=completed;
-  const recent=orders.slice(0,3);
-  $('#dashRecent').className=recent.length?'':'dash-empty';
-  $('#dashRecent').innerHTML=recent.length?recent.map(o=>'<div class="order"><b>'+esc(o.orderCode||o.id)+'</b> · UID '+esc(o.gameUid||'')+'<br><span class="muted">'+esc(o.region||'')+' · '+esc(o.status||'Pending')+'</span></div>').join(''):'No orders yet. Submit your first request to see it here.';
-}
-function renderOrders(){
-  $('#ordersList').innerHTML=orders.length?orders.map(o=>'<div class="order"><b>'+esc(o.orderCode||o.id)+'</b> · UID '+esc(o.gameUid||'')+'<br><span class="muted">'+esc(o.region||'')+' · '+esc(o.status||'Pending')+'</span></div>').join(''):'No orders yet.';
-}
-function renderAuto(){
-  $('#autoList').innerHTML=schedules.map(s=>'<div class="order">UID '+esc(s.gameUid)+' · '+esc(s.region)+' · '+esc(s.time)+' · '+esc(s.plan)+' </div>').join('');
-}
-function requireLogin(){
-  if(!currentUser){showAuth();return false;}return true;
-}
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));
-  $('#sendPanel').hidden=b.dataset.tab!=='send';$('#autoPanel').hidden=b.dataset.tab!=='auto';
-});
-$('#sendForm').onsubmit=async e=>{
-  e.preventDefault();if(!requireLogin())return;
-  const gameUid=$('#uid').value.trim(),coupon=$('#coupon').value.trim(),region=$('#region').value;
-  if(!/^\d{5,15}$/.test(gameUid)){ $('#couponStatus').textContent='❌ Enter a valid numeric UID';return; }
-  if(!coupon){$('#couponStatus').textContent='Enter coupon code.';return;}
-  try{
-    // This records a request only. Coupon validation and actual likes delivery must be handled by a trusted backend.
-    const ref=await addDoc(collection(db,'orders'),{uidOwner:currentUser.uid,email:currentUser.email,gameUid,coupon,region,status:'PENDING_VERIFICATION',createdAt:serverTimestamp()});
-    $('#couponStatus').textContent='';
-    $('#sendMessage').textContent='✓ Request saved to your account (Order '+ref.id+'). Coupon verification and likes delivery are not active yet.';
-    e.target.reset();await loadCloudData();
-  }catch(err){$('#sendMessage').textContent='Could not save request: '+err.message;}
-};
-$('#autoForm').onsubmit=async e=>{
-  e.preventDefault();if(!requireLogin())return;
-  const gameUid=$('#autoUid').value.trim(),coupon=$('#autoCoupon').value.trim(),region=$('#autoRegion').value,time=$('#time').value;
-  if(!/^\d{5,15}$/.test(gameUid))return;
-  try{
-    await addDoc(collection(db,'autoSchedules'),{uidOwner:currentUser.uid,gameUid,coupon,region,time,plan:'Awaiting plan selection',status:'PENDING_VERIFICATION',createdAt:serverTimestamp()});
-    $('#autoMessage').textContent='✓ Request saved to your account. Automatic delivery is not active yet.';
-    e.target.reset();await loadCloudData();
-  }catch(err){$('#autoMessage').textContent='Could not save request: '+err.message;}
-};
-$('#getCoupon').onclick=$('#buyCoupon').onclick=()=>modal('Get Coupon','<p>Online payment and coupon issuance will be enabled after a trusted payment and backend integration. Do not send money to an unverified account.</p>');
-$('#apiBtn').onclick=()=>modal('API Documentation','<p><b>API status:</b> Not connected.</p><p>Live coupon verification and Free Fire likes delivery must run through a secure, authorized backend. Never put private provider keys in this website.</p>');
-$('#howBtn').onclick=()=>modal('How to use FF LIKED','<p>1. Create an account or log in.<br>2. Enter your Free Fire UID, coupon and region.<br>3. Submit your request. It will appear in My Orders. Live delivery is not enabled yet.</p>');
-$('#checkOrder').onclick=async()=>{
-  if(!requireLogin())return;
-  try{await loadCloudData();$('#ordersCard').hidden=false;$('#ordersCard').scrollIntoView({behavior:'smooth'});}
-  catch(e){$('#ordersList').textContent='Could not load orders: '+e.message;}
-};
-$('#closeOrders').onclick=()=>$('#ordersCard').hidden=true;
-$('#dashAllOrders').onclick=()=>{
-  $('#ordersCard').hidden=false;
-  $('#ordersCard').scrollIntoView({behavior:'smooth'});
-};
-$('#dashLogout').onclick=async()=>{
-  try{await doLogout();$('#ordersCard').hidden=true;}
-  catch(e){alert('Logout failed: '+e.message);}
-};
-
-$('#closeModal').onclick=()=>$('#modal').classList.remove('open');
-$('#modal').onclick=e=>{if(e.target.id==='modal')$('#modal').classList.remove('open')};
-$('#whatsapp').onclick=()=>modal('WhatsApp Support','<p>WhatsApp Business number needs to be configured before launch.</p>');
-
-// Keep the customer signed in on this browser/device until they choose Log Out.
-await setPersistence(auth, browserLocalPersistence);
-
-onAuthStateChanged(auth,async user=>{
-  currentUser=user;
-  if(user){
-    const snap=await getDoc(doc(db,'users',user.uid));
-    currentRole=snap.exists()?(snap.data().role||'customer'):'customer';
-    await loadCloudData();
-  }else{orders=[];schedules=[];$('#ordersList').textContent='Log in to view your orders.';$('#autoList').innerHTML='';renderDashboard();}
-  setAuthHeader();
-});
-</script></body></html>
+  const pending=orders.filter(o=>!['COMPLETED','SUCCESS','D
