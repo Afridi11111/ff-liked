@@ -174,7 +174,7 @@ const db = getFirestore(app);
 const $ = s => document.querySelector(s);
 const esc = v => String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let currentUser = null, currentRole = "customer", orders = [], schedules = [];
-const WORKER_URL = "https://ff-liked-apil.afriditkg.workers.dev";
+const WORKER_URL = "https://ff-liked-worker.afriditkg.workers.dev";
 let ownerApiReady = false;
 function isOwnerToken(tokenResult){ return tokenResult?.claims?.admin === true; }
 function showRoleDashboard(){
